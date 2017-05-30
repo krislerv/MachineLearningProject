@@ -13,11 +13,11 @@ import java.util.regex.Pattern;
 public class NearestNeighbors {
 
     /**
-     * An ArrayList containing ArrayLists containing Nodes. Each ArrayList<Node> is a
+     * An ArrayList containing ArrayLists containing DataPoints. Each ArrayList<DataPoint> is a
      * sample (or fold) used in cross-validation. With 10-fold cross validation, the
      * size of samples would be 10
      */
-    private ArrayList<ArrayList<Node>> samples;
+    private ArrayList<ArrayList<DataPoint>> samples;
 
     /**
      * A list of all the possible values for the target variable when we are classifying
@@ -29,6 +29,11 @@ public class NearestNeighbors {
      * crossValidationFolds: How many folds to use for cross-validation
      */
     private final int k, crossValidationFolds;
+
+    /**
+     * If the neighbors should be distance weighted
+     */
+    private final boolean useDistanceWeighting;
 
     /**
      * realValDist: Which distance function to use for real value attributes
@@ -56,10 +61,11 @@ public class NearestNeighbors {
      * @param realValDist distance function to use for real value attributes
      * @param catValDist distance function to use for categorical value attributes
      */
-    private NearestNeighbors(int k, int crossValidationFolds, String targetAttributeName, ArrayList<String> skippedAttributes, String filename, RealValueDistanceFunction realValDist, CategoricalValueDistanceFunction catValDist) {
+    private NearestNeighbors(int k, int crossValidationFolds, boolean useDistanceWeighting, String targetAttributeName, ArrayList<String> skippedAttributes, String filename, RealValueDistanceFunction realValDist, CategoricalValueDistanceFunction catValDist) {
         // Initialize fields
         this.k = k;
         this.crossValidationFolds = crossValidationFolds;
+        this.useDistanceWeighting = useDistanceWeighting;
         this.targetAttributeName = targetAttributeName;
         this.filename = filename;
         this.skippedAttributes = skippedAttributes;
@@ -73,7 +79,7 @@ public class NearestNeighbors {
         int targetAttributeIndex = -1;
 
         // Load data
-        ArrayList<Node> nodes = new ArrayList<>();
+        ArrayList<DataPoint> dataPoints = new ArrayList<>();
         ArrayList<String> attributeTypes = new ArrayList<>();
         try {
             Scanner in = new Scanner(new FileReader(filename));
@@ -114,7 +120,7 @@ public class NearestNeighbors {
             while (!in.nextLine().startsWith("@data")) {
                 // do nothing
             }
-            // When we get to the data, create a Node-object for each row
+            // When we get to the data, create a DataPoint-object for each row
             while (!in.hasNext(Pattern.compile("%"))) {
                 String line = in.nextLine();
                 String[] attributeList = line.split(",");
@@ -133,62 +139,62 @@ public class NearestNeighbors {
                         attributeListCategorical.add(attributeList[i]);
                     }
                 }
-                nodes.add(new Node(attributeListReal, attributeListCategorical, targetAttribute));
+                dataPoints.add(new DataPoint(attributeListReal, attributeListCategorical, targetAttribute));
             }
             in.close();
         } catch (FileNotFoundException e) {
             e.printStackTrace();
         }
         // Normalize numerical values
-        for (int i = 0; i < nodes.get(0).realValues.length; i++) {
+        for (int i = 0; i < dataPoints.get(0).realValues.length; i++) {
             float min = Float.MAX_VALUE, max = Float.MIN_VALUE;
-            for (Node node : nodes) {
-                if (node.realValues[i] < min) {
-                    min = node.realValues[i];
-                } else if (node.realValues[i] > max) {
-                    max = node.realValues[i];
+            for (DataPoint dataPoint : dataPoints) {
+                if (dataPoint.realValues[i] < min) {
+                    min = dataPoint.realValues[i];
+                } else if (dataPoint.realValues[i] > max) {
+                    max = dataPoint.realValues[i];
                 }
             }
-            for (Node node : nodes) {
-                node.realValues[i] = (node.realValues[i] - min) / (max - min);
+            for (DataPoint dataPoint : dataPoints) {
+                dataPoint.realValues[i] = (dataPoint.realValues[i] - min) / (max - min);
             }
         }
         // Randomize instance order and divide into samples (folds)
-        Collections.shuffle(nodes, new Random(4));
+        Collections.shuffle(dataPoints, new Random(4));
         int nextSampleIndex = 0;
-        while (!nodes.isEmpty()) {
-            samples.get(nextSampleIndex).add(nodes.remove(0));
+        while (!dataPoints.isEmpty()) {
+            samples.get(nextSampleIndex).add(dataPoints.remove(0));
             nextSampleIndex = nextSampleIndex == crossValidationFolds - 1 ? 0 : nextSampleIndex+1;
         }
     }
 
     /**
-     * Returns the k nearest neighbors to the given node
-     * @param n1 the given node
+     * Returns the k nearest neighbors to the given data point
+     * @param dp1 the given data point
      * @param validationSetIndex the index of the validation set (which will be skipped)
-     * @return the k nearest neighbors to the given node
+     * @return the k nearest neighbors to the given data point
      */
-    private ArrayList<Node> getNearestNeighbors(Node n1, int validationSetIndex) {
-        ArrayList<Node> nearestNeighbors = new ArrayList<>();
-        ArrayList<Node> trainingSet = new ArrayList<>();
+    private ArrayList<DataPoint> getNearestNeighbors(DataPoint dp1, int validationSetIndex) {
+        ArrayList<DataPoint> nearestNeighbors = new ArrayList<>();
+        ArrayList<DataPoint> trainingSet = new ArrayList<>();
         for (int i = 0; i < crossValidationFolds; i++) {
             if (i == validationSetIndex) {
                 continue;
             }
             trainingSet.addAll(samples.get(i));
         }
-        for (Node node : trainingSet) {
+        for (DataPoint dataPoint : trainingSet) {
             if (nearestNeighbors.isEmpty()) {
-                nearestNeighbors.add(node);
+                nearestNeighbors.add(dataPoint);
             } else {
                 for (int j = 0; j < nearestNeighbors.size(); j++) {
-                    if (realValDist.distance(node, n1) + catValDist.distance(node, n1) < realValDist.distance(nearestNeighbors.get(j), n1) + catValDist.distance(nearestNeighbors.get(j), n1)) {
-                        nearestNeighbors.add(j, node);
+                    if (realValDist.distance(dataPoint, dp1) + catValDist.distance(dataPoint, dp1) < realValDist.distance(nearestNeighbors.get(j), dp1) + catValDist.distance(nearestNeighbors.get(j), dp1)) {
+                        nearestNeighbors.add(j, dataPoint);
                         break;
                     }
                 }
-                if (nearestNeighbors.size() < k && !nearestNeighbors.contains(node)) {
-                    nearestNeighbors.add(node);
+                if (nearestNeighbors.size() < k && !nearestNeighbors.contains(dataPoint)) {
+                    nearestNeighbors.add(dataPoint);
                 }
                 if (nearestNeighbors.size() > k) {
                     nearestNeighbors.remove(k);
@@ -199,24 +205,28 @@ public class NearestNeighbors {
     }
 
     /**
-     * Classifies a single node
-     * @param n1 the node to be classified
+     * Classifies a single data point
+     * @param dp1 the data point to be classified
      * @param validationSetIndex the index of the validation set (which will be skipped when generating neighbors)
-     * @return the classification value of the node
+     * @return the classification value of the data point
      */
-    private String classify(Node n1, int validationSetIndex) {
-        ArrayList<Node> nearestNeighbors = getNearestNeighbors(n1, validationSetIndex);
+    private String classify(DataPoint dp1, int validationSetIndex) {
+        ArrayList<DataPoint> nearestNeighbors = getNearestNeighbors(dp1, validationSetIndex);
         ArrayList<Double> attributeValueCounts = new ArrayList<>();
 
         for (String ignored : classificationTargetAttributeValues) {
             attributeValueCounts.add(0.0);
         }
 
-        for (Node node : nearestNeighbors) {
+        for (DataPoint dataPoint : nearestNeighbors) {
             for (int i = 0; i < classificationTargetAttributeValues.length; i++) {
-                if (Objects.equals(node.targetAttributeValue, classificationTargetAttributeValues[i])) {
-                    if (true) {
-                        attributeValueCounts.set(i, attributeValueCounts.get(i) + 1.0/Math.pow(realValDist.distance(node, n1) + catValDist.distance(node, n1), 2));
+                if (dataPoint.targetAttributeValue.equals(classificationTargetAttributeValues[i])) {
+                    if (useDistanceWeighting) {
+                        double distance = Math.pow(realValDist.distance(dataPoint, dp1) + catValDist.distance(dataPoint, dp1), 2);
+                        if (distance == 0) {
+                            distance = 1;
+                        }
+                        attributeValueCounts.set(i, attributeValueCounts.get(i) + 1.0/distance);
                     } else {
                         attributeValueCounts.set(i, attributeValueCounts.get(i) + 1);
                     }
@@ -234,8 +244,8 @@ public class NearestNeighbors {
         ArrayList<Float> successRates = new ArrayList<>();
         for (int i = 0; i < crossValidationFolds; i++) {
             int correct = 0;
-            for (Node node : samples.get(i)) {
-                if (Objects.equals(classify(node, i), node.targetAttributeValue)) {
+            for (DataPoint dataPoint : samples.get(i)) {
+                if (classify(dataPoint, i).equals(dataPoint.targetAttributeValue)) {
                     correct++;
                 }
             }
@@ -247,8 +257,8 @@ public class NearestNeighbors {
         }
         averageSuccessRate = averageSuccessRate / crossValidationFolds;
 
-        System.out.println("Results for " + k + "-NearestNeighbor targetAttributeValue with " + crossValidationFolds + "-fold cross-validation for the data set " + filename + ":");
-        System.out.println("Target attribute: " + targetAttributeName);
+        System.out.println("Results for " + k + "-NearestNeighbor classification with " + crossValidationFolds + "-fold cross-validation for the data set " + filename + ":");
+        System.out.println("Target attribute: " + targetAttributeName + " (Possible values: " + Arrays.toString(classificationTargetAttributeValues) + ")");
         System.out.println("Real value distance function: " + realValDist);
         System.out.println("Categorical value distance function: " + catValDist);
         System.out.println("The target attribute was correctly classified " + 100*averageSuccessRate + "% of the time");
@@ -256,28 +266,28 @@ public class NearestNeighbors {
     }
 
     /**
-     * Predicts the value of a single node
-     * @param n1 the node to predict the value for
+     * Predicts the value of a single data point
+     * @param dp1 the data point to predict the value for
      * @param validationSetIndex the index of the validation set (which will be skipped when generating neighbors)
-     * @return the predicted value of the node
+     * @return the predicted value of the data point
      */
-    private double regress(Node n1, int validationSetIndex) {
-        ArrayList<Node> nearestNeighbors = getNearestNeighbors(n1, validationSetIndex);
+    private double regress(DataPoint dp1, int validationSetIndex) {
+        ArrayList<DataPoint> nearestNeighbors = getNearestNeighbors(dp1, validationSetIndex);
         float avgValue = 0;
         double sumDistance = 0;
-        for (Node node : nearestNeighbors) {
-            double distance = 1/Math.pow(realValDist.distance(node, n1) + catValDist.distance(node, n1), 2);
+        for (DataPoint dataPoint : nearestNeighbors) {
+            double distance = 1/Math.pow(realValDist.distance(dataPoint, dp1) + catValDist.distance(dataPoint, dp1), 2);
             if (Double.isNaN(distance) || Double.isInfinite(distance)) {
                 distance = 1;
             }
             sumDistance += distance;
-            if (true) {
-                avgValue += Float.parseFloat(node.targetAttributeValue)*distance;
+            if (useDistanceWeighting) {
+                avgValue += Float.parseFloat(dataPoint.targetAttributeValue)*distance;
             } else {
-                avgValue += Float.parseFloat(node.targetAttributeValue);
+                avgValue += Float.parseFloat(dataPoint.targetAttributeValue);
             }
         }
-        if (true) {
+        if (useDistanceWeighting) {
             return avgValue / sumDistance;
         } else {
             return avgValue / nearestNeighbors.size();
@@ -292,8 +302,8 @@ public class NearestNeighbors {
         ArrayList<Float> meanAbsoluteErrors = new ArrayList<>();
         for (int i = 0; i < crossValidationFolds; i++) {
             float absoluteError = 0;
-            for (Node node : samples.get(i)) {
-                absoluteError += Math.abs(regress(node, i) - Float.parseFloat(node.targetAttributeValue));
+            for (DataPoint dataPoint : samples.get(i)) {
+                absoluteError += Math.abs(regress(dataPoint, i) - Float.parseFloat(dataPoint.targetAttributeValue));
             }
             meanAbsoluteErrors.add(absoluteError / samples.get(i).size());
         }
@@ -312,13 +322,16 @@ public class NearestNeighbors {
     }
 
     public static void main(String[] args) {
-        NearestNeighbors nn1 = new NearestNeighbors(3, 10, "class", new ArrayList<>(), "ionosphere.arff", new PNorm(2), new HammingDistance());
+        NearestNeighbors nn1 = new NearestNeighbors(2, 10, false, "class", new ArrayList<>(Arrays.asList("a01", "a03", "a06", "a10", "a12", "a16", "a17", "a18", "a20", "a22", "a23", "a24", "a26", "a27", "a29", "a30", "a31", "a32", "a33")), "ionosphere.arff", new MinkowskiDistance(2), new IgnoreCategoricalValues());
         nn1.classification();
         System.out.println();
-        NearestNeighbors nn2 = new NearestNeighbors(3, 10, "price", new ArrayList<>(Arrays.asList("engine-size", "compression-ratio", "peak-rpm", "normalized-losses")), "autos.arff", new PNorm(2), new HammingDistance());
+        NearestNeighbors nn1a = new NearestNeighbors(3, 10, true, "class", new ArrayList<>(Arrays.asList("a03", "a10", "a12", "a16", "a17", "a18", "a20", "a22", "a23", "a24", "a26", "a27", "a29", "a30", "a31", "a32", "a33")), "ionosphere.arff", new MinkowskiDistance(2), new IgnoreCategoricalValues());
+        nn1a.classification();
+        System.out.println();
+        NearestNeighbors nn2 = new NearestNeighbors(2, 10, false, "price", new ArrayList<>(Arrays.asList("normalized-losses","fuel-type","aspiration","num-of-doors","body-style","length","height","engine-type","num-of-cylinders","fuel-system","bore","stroke","compression-ratio","peak-rpm","symboling")), "autos.arff", new MinkowskiDistance(2), new HammingDistance());
         nn2.regression();
         System.out.println();
-        NearestNeighbors nn3 = new NearestNeighbors(3, 10, "price", new ArrayList<>(Arrays.asList("engine-size", "compression-ratio", "peak-rpm", "normalized-losses")), "autos.arff", new PNorm(2), new IgnoreCategoricalValues());
+        NearestNeighbors nn3 = new NearestNeighbors(5, 10, true, "price", new ArrayList<>(Arrays.asList("normalized-losses","fuel-type","aspiration","num-of-doors","body-style","length","width","height","engine-type","num-of-cylinders","fuel-system","stroke","compression-ratio","symboling")), "autos.arff", new MinkowskiDistance(2), new HammingDistance());
         nn3.regression();
     }
 

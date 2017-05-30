@@ -1,6 +1,6 @@
 package distanceFunctions;
 
-import algorithm.Node;
+import algorithm.DataPoint;
 
 /**
  * Categorical value distance function defined as follows:
@@ -9,7 +9,7 @@ import algorithm.Node;
 public class IgnoreCategoricalValues implements CategoricalValueDistanceFunction {
 
     @Override
-    public double distance(Node n1, Node n2) {
+    public double distance(DataPoint dp1, DataPoint dp2) {
         return 0;
     }
 

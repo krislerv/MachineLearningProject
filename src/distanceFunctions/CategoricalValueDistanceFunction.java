@@ -1,8 +1,8 @@
 package distanceFunctions;
 
-import algorithm.Node;
+import algorithm.DataPoint;
 
 public interface CategoricalValueDistanceFunction {
 
-    double distance(Node n1, Node n2);
+    double distance(DataPoint dp1, DataPoint dp2);
 }
