@@ -4,22 +4,22 @@ import java.util.ArrayList;
 import java.util.Arrays;
 
 /**
- * Representation of a single instance.
+ * Representation of a single data point.
  */
 public class DataPoint {
 
     /**
-     * An array of all the real values of the instance
+     * An array of all the real values of the data point
      */
     public final Float[] realValues;
 
     /**
-     * An array of all the categorical values of the instance
+     * An array of all the categorical values of the data point
      */
     public final String[] categoricalValues;
 
     /**
-     * The value of the target attribute for this instance
+     * The value of the target attribute for this data point
      */
     final String targetAttributeValue;
 

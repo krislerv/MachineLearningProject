@@ -8,16 +8,16 @@ import java.util.*;
 import java.util.regex.Pattern;
 
 /**
- * Implementation of a k-NearestNeighbor algorithm with k-fold cross validation
+ * Implementation of a k-NearestNeighbor algorithm
  */
 public class NearestNeighbors {
 
     /**
      * An ArrayList containing ArrayLists containing DataPoints. Each ArrayList<DataPoint> is a
-     * sample (or fold) used in cross-validation. With 10-fold cross validation, the
-     * size of samples would be 10
+     * fold used in cross-validation. With 10-fold cross validation, the
+     * size of folds would be 10
      */
-    private ArrayList<ArrayList<DataPoint>> samples;
+    private final ArrayList<ArrayList<DataPoint>> folds;
 
     /**
      * A list of all the possible values for the target variable when we are classifying
@@ -39,46 +39,44 @@ public class NearestNeighbors {
      * realValDist: Which distance function to use for real value attributes
      * catValDist: Which distance function to use for categorical value attributes
      */
-    private RealValueDistanceFunction realValDist;
-    private CategoricalValueDistanceFunction catValDist;
+    private final RealValueDistanceFunction realValDist;
+    private final CategoricalValueDistanceFunction catValDist;
 
     /**
      * targetAttributeName: The name of the target attribute
-     * filename: The filename of the dataset we're using
-     * skippedAttributes: A list of the names of attributes we're omitting
+     * filename: The filename of the data set we're using
+     * ignoredAttributes: A list of the names of attributes we're ignoring
      */
     private final String targetAttributeName, filename;
-    private final ArrayList<String> skippedAttributes;
+    private final ArrayList<String> ignoredAttributes;
 
     /**
      * Initializes the algorithm with the given values. Loads the data, normalizes the
-     * data, randomizes the order and divides the data into samples for cross-validation
+     * data, randomizes the order and divides the data into folds for cross-validation
      * @param k how many neighbors to consider
      * @param crossValidationFolds how many folds to use for cross-validation
      * @param targetAttributeName the name of the target attribute
-     * @param skippedAttributes list of the names of attributes we're omitting
-     * @param filename filename of the dataset we're using
+     * @param ignoredAttributes list of the names of attributes we're ignoring
+     * @param filename filename of the data set we're using
      * @param realValDist distance function to use for real value attributes
      * @param catValDist distance function to use for categorical value attributes
      */
-    private NearestNeighbors(int k, int crossValidationFolds, boolean useDistanceWeighting, String targetAttributeName, ArrayList<String> skippedAttributes, String filename, RealValueDistanceFunction realValDist, CategoricalValueDistanceFunction catValDist) {
+    private NearestNeighbors(int k, int crossValidationFolds, boolean useDistanceWeighting, String targetAttributeName, ArrayList<String> ignoredAttributes, String filename, RealValueDistanceFunction realValDist, CategoricalValueDistanceFunction catValDist) {
         // Initialize fields
         this.k = k;
         this.crossValidationFolds = crossValidationFolds;
         this.useDistanceWeighting = useDistanceWeighting;
         this.targetAttributeName = targetAttributeName;
         this.filename = filename;
-        this.skippedAttributes = skippedAttributes;
+        this.ignoredAttributes = ignoredAttributes;
         this.realValDist = realValDist;
         this.catValDist = catValDist;
-        samples = new ArrayList<>();
+        folds = new ArrayList<>();
         for (int i = 0; i < crossValidationFolds; i++) {
-            samples.add(new ArrayList<>());
+            folds.add(new ArrayList<>());
         }
-
-        int targetAttributeIndex = -1;
-
         // Load data
+        int targetAttributeIndex = -1;
         ArrayList<DataPoint> dataPoints = new ArrayList<>();
         ArrayList<String> attributeTypes = new ArrayList<>();
         try {
@@ -98,7 +96,7 @@ public class NearestNeighbors {
             while (in.hasNext(Pattern.compile("@attribute"))) {
                 String line = in.nextLine();
                 String attributeName = line.split(" ")[1];
-                if (skippedAttributes.contains(attributeName)) {
+                if (ignoredAttributes.contains(attributeName)) {
                     skippedAttributesIndexes.add(currentAttributeIndex);
                 }
                 if (line.split(" ")[2].equals("real")) {
@@ -159,12 +157,12 @@ public class NearestNeighbors {
                 dataPoint.realValues[i] = (dataPoint.realValues[i] - min) / (max - min);
             }
         }
-        // Randomize instance order and divide into samples (folds)
+        // Randomize instance order and divide into folds
         Collections.shuffle(dataPoints, new Random(4));
-        int nextSampleIndex = 0;
+        int nextFoldIndex = 0;
         while (!dataPoints.isEmpty()) {
-            samples.get(nextSampleIndex).add(dataPoints.remove(0));
-            nextSampleIndex = nextSampleIndex == crossValidationFolds - 1 ? 0 : nextSampleIndex+1;
+            folds.get(nextFoldIndex).add(dataPoints.remove(0));
+            nextFoldIndex = nextFoldIndex == crossValidationFolds - 1 ? 0 : nextFoldIndex+1;
         }
     }
 
@@ -181,7 +179,7 @@ public class NearestNeighbors {
             if (i == validationSetIndex) {
                 continue;
             }
-            trainingSet.addAll(samples.get(i));
+            trainingSet.addAll(folds.get(i));
         }
         for (DataPoint dataPoint : trainingSet) {
             if (nearestNeighbors.isEmpty()) {
@@ -244,12 +242,12 @@ public class NearestNeighbors {
         ArrayList<Float> successRates = new ArrayList<>();
         for (int i = 0; i < crossValidationFolds; i++) {
             int correct = 0;
-            for (DataPoint dataPoint : samples.get(i)) {
+            for (DataPoint dataPoint : folds.get(i)) {
                 if (classify(dataPoint, i).equals(dataPoint.targetAttributeValue)) {
                     correct++;
                 }
             }
-            successRates.add((float) correct / samples.get(i).size());
+            successRates.add((float) correct / folds.get(i).size());
         }
         float averageSuccessRate = 0;
         for (Float f : successRates) {
@@ -262,7 +260,7 @@ public class NearestNeighbors {
         System.out.println("Real value distance function: " + realValDist);
         System.out.println("Categorical value distance function: " + catValDist);
         System.out.println("The target attribute was correctly classified " + 100*averageSuccessRate + "% of the time");
-        System.out.println("Attributes omitted: " + skippedAttributes);
+        System.out.println("Attributes omitted: " + ignoredAttributes);
     }
 
     /**
@@ -302,10 +300,10 @@ public class NearestNeighbors {
         ArrayList<Float> meanAbsoluteErrors = new ArrayList<>();
         for (int i = 0; i < crossValidationFolds; i++) {
             float absoluteError = 0;
-            for (DataPoint dataPoint : samples.get(i)) {
+            for (DataPoint dataPoint : folds.get(i)) {
                 absoluteError += Math.abs(regress(dataPoint, i) - Float.parseFloat(dataPoint.targetAttributeValue));
             }
-            meanAbsoluteErrors.add(absoluteError / samples.get(i).size());
+            meanAbsoluteErrors.add(absoluteError / folds.get(i).size());
         }
         float averageAbsError = 0;
         for (Float f : meanAbsoluteErrors) {
@@ -318,7 +316,7 @@ public class NearestNeighbors {
         System.out.println("Real value distance function: " + realValDist);
         System.out.println("Categorical value distance function: " + catValDist);
         System.out.println("The target attribute was predicted with a mean absolute error of " + averageAbsError);
-        System.out.println("Attributes omitted: " + skippedAttributes);
+        System.out.println("Attributes omitted: " + ignoredAttributes);
     }
 
     public static void main(String[] args) {
